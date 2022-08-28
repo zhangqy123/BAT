@@ -1,0 +1,133 @@
+library(CellChat)
+library(patchwork)
+library(Seurat)
+library(Matrix)
+library(dplyr)
+library(ggplot2)
+library(ggalluvial)
+library(svglite)
+options(stringsAsFactors = FALSE)
+`NC-SVF-Celltype` <- readRDS(".../NC-SVF-Celltype.rds")
+
+data.input <- GetAssayData(`NC-SVF-Celltype` , assay = "RNA", slot = "data") # normalized data matrix
+labels <- Idents(`NC-SVF-Celltype` )
+identity <- data.frame(group = labels, row.names = names(labels)) # create a dataframe of the cell labels
+
+cellchat <- createCellChat(data.input)
+
+cellchat <- addMeta(cellchat, meta = identity, meta.name = "labels")
+cellchat <- setIdent(cellchat, ident.use = "labels") # set "labels" as default cell identity
+levels(cellchat@idents) # show factor levels of the cell labels
+groupSize <- as.numeric(table(cellchat@idents)) 
+
+CellChatDB <- CellChatDB.mouse 
+ showDatabaseCategory(CellChatDB)
+
+ dplyr::glimpse(CellChatDB$interaction)  
+ CellChatDB_interaction <- CellChatDB$interaction
+ CellChatDB.use <- subsetDB(CellChatDB, search = "Secreted Signaling") 
+ cellchat@DB <- CellChatDB.use
+
+ cellchat <- subsetData(cellchat)
+ cellchat <- identifyOverExpressedGenes(cellchat)
+ cellchat <- identifyOverExpressedInteractions(cellchat)
+
+ cellchat <- projectData(cellchat, PPI.mouse)
+
+cellchat <- computeCommunProb(cellchat)
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+ df.net <- subsetCommunication(cellchat)  
+df.net <- subsetCommunication(cellchat, sources.use = c(1,2), targets.use = c(4,5))
+df.net <- subsetCommunication(cellchat, signaling = c("CCL"))
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat@netP$pathways
+head(cellchat@LR$LRsig)
+groupSize <- as.numeric(table(cellchat@idents))
+par(mfrow = c(1,2), xpd=TRUE)
+netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Number of interactions")
+netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Interaction weights/strength")
+par(mfrow=c(1,1))
+h1<-netVisual_heatmap(cellchat)
+h2<-netVisual_heatmap(cellchat,measure = "weight")
+h1+h2
+mat <- cellchat@net$weight
+ par(mfrow = c(3,4), xpd=TRUE)
+ for (i in 1:nrow(mat)) {
+   mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+   mat2[i, ] <- mat[i, ]
+   netVisual_circle(mat2, vertex.weight = groupSize, weight.scale = T, edge.weight.max = max(mat), title.name = rownames(mat)[i])
+cellchat@netP$pathways
+levels(cellchat@idents) 
+vertex.receiver = seq(1,4) # a numeric vector
+# check the order of cell identity to set suitable vertex.receiver
+cellchat@LR$LRsig$pathway_name
+cellchat@LR$LRsig$antagonist
+pathways.show<-c("CCL")
+netVisual_aggregate(cellchat, signaling = pathways.show,  vertex.receiver = vertex.receiver, vertex.size = groupSize)
+netVisual_aggregate(cellchat, signaling = pathways.show, layout = "chord")
+netVisual_heatmap(cellchat, signaling = pathways.show, color.heatmap = "Reds")
+netAnalysis_contribution(cellchat, signaling = pathways.show)
+netVisual_individual(cellchat, signaling = pathways.show, pairLR.use = "CCL5_CCR1", layout = "circle")
+netVisual_bubble(cellchat, sources.use = 1, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 2, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 3, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 4, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 5, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 6, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 7, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 8, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 9, targets.use = c(1:9), remove.isolate = FALSE)
+netVisual_bubble(cellchat, sources.use = 4, targets.use = c(5:11), signaling = c("CCL","CXCL"), remove.isolate = FALSE)
+plotGeneExpression(cellchat, signaling = "CCL", enriched.only = FALSE)
+# Compute the network centrality scores
+cellchat <- netAnalysis_computeCentrality(cellchat, slot.name = "netP")
+# the slot 'netP' means the inferred intercellular communication network of signaling athways
+# Visualize the computed centrality scores using heatmap, allowing ready identification of major signaling roles of cell groups
+netAnalysis_signalingRole_network(cellchat, signaling = pathways.show, width = 8, height = 2.5, font.size = 10)
+# Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+gg1 <- netAnalysis_signalingRole_scatter(cellchat)
+#> Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+# Signaling role analysis on the cell-cell communication networks of interest
+gg2 <- netAnalysis_signalingRole_scatter(cellchat, signaling = c("CXCL", "CCL"))
+#> Signaling role analysis on the cell-cell communication network from user's input
+gg1 + gg2
+# Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+ht1 <- netAnalysis_signalingRole_heatmap(cellchat, pattern = "outgoing")
+ht2 <- netAnalysis_signalingRole_heatmap(cellchat, pattern = "incoming")
+ht1 + ht2
+# Signaling role analysis on the cell-cell communication networks of interest
+ht <- netAnalysis_signalingRole_heatmap(cellchat, signaling = c("CXCL", "CCL"))
+ht
+library(NMF)
+#> Loading required package: pkgmaker
+#> Loading required package: registry
+#> Loading required package: rngtools
+#> Loading required package: cluster
+#> NMF - BioConductor layer [OK] | Shared memory capabilities [NO: bigmemory] | Cores 15/16
+#>   To enable shared memory capabilities, try: install.extras('#> NMF#> ')#> #> Attaching package: 'NMF'
+#> The following objects are masked from 'package:igraph':#> #>     algorithm, compare
+library(ggalluvial)
+selectK(cellchat, pattern = "outgoing")
+selectK(cellchat, pattern = "incoming")
+nPatterns = 5 
+myidentifyCommunicationPatterns <- edit(identifyCommunicationPatterns)
+environment(myidentifyCommunicationPatterns) <- environment(identifyCommunicationPatterns)
+cellchat <- myidentifyCommunicationPatterns(cellchat, pattern = "outgoing", k = nPatterns)
+# Visualize the communication pattern using river plot，
+netAnalysis_river(cellchat, pattern = "outgoing")
+# Visualize the communication pattern using dot plot，
+netAnalysis_dot(cellchat, pattern = "outgoing")
+nPatterns = 5 
+myidentifyCommunicationPatterns <- edit(identifyCommunicationPatterns)
+environment(myidentifyCommunicationPatterns) <- environment(identifyCommunicationPatterns)
+cellchat <- myidentifyCommunicationPatterns(cellchat, pattern = "incoming", k = nPatterns)
+netAnalysis_river(cellchat, pattern = "incoming")
+netAnalysis_dot(cellchat, pattern = "incoming")
+
+
+
+
+
+
+
+

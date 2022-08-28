@@ -1,0 +1,44 @@
+library(Seurat)
+library(dplyr)
+library(Matrix)
+svf.data <- Read10X(data.dir = ".../datasets")
+svf <- CreateSeuratObject(raw.data = svf.data, min.cells = 3, min.genes = 200, project = "10X_SVF")
+
+#QC
+mito.genes <- grep(pattern = "^Mt-", x = rownames(x = svf@data), value = TRUE)
+percent.mito <- Matrix::colSums(svf@raw.data[mito.genes, ]) / Matrix::colSums(svf@raw.data)
+svf <- AddMetaData(object = svf, metadata = percent.mito, col.name = "percent.mito")
+VlnPlot(object = svf, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+
+#FilterCells750-4500/200-2500
+svf <- FilterCells(object = svf, subset.names = c("nGene", "percent.mito"), low.thresholds = c(200, -Inf), high.thresholds = c(2500, 0.05))
+
+#NormalizeData
+svf <- NormalizeData(object = svf, normalization.method = "LogNormalize", scale.factor = 10000)
+
+#FindVariableGenes
+svf <- FindVariableGenes(object = svf, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.0125, x.high.cutoff = 3, y.cutoff = 0.5)
+
+svf <- ScaleData(object = svf, vars.to.regress = c("nUMI", "percent.mito"))
+cc.genes <- str_to_title(cc.genes)
+s.genes <- cc.genes$"s.genes"
+g2m.genes <- cc.genes$"g2m.genes"
+svf <- CellCycleScoring(object = svf, s.genes, g2m.genes, set.ident = FALSE)
+
+
+#PCA
+svf <- RunPCA(object = svf, pc.genes = svf@var.genes, do.print = TRUE, pcs.print = 1:5, genes.print = 5)
+svf <- ProjectPCA(object = svf, do.print = FALSE)
+
+PCElbowPlot(object = svf)
+
+#FindClusters
+svf <- FindClusters(object = svf, reduction.type = "pca", dims.use = 1:15, resolution = 0.6, print.output = 0, save.SNN = TRUE)
+
+#tSNE
+svf<- RunTSNE(object = svf, dims.use = 1:15, do.fast = TRUE)
+TSNEPlot(svf, do.label = T, do.return = T, pt.size = 0.5)
+
+svf.markers <- FindAllMarkers(object = svf, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+svf.markers %>% group_by(cluster) %>% top_n(10, avg_logFC) -> top10
+DoHeatmap(object = svf, genes.use = top10$gene, slim.col.label = TRUE, remove.key = TRUE)
